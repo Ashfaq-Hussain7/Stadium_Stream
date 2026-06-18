@@ -7,6 +7,7 @@ interface Highlight {
   description: string;
   duration: string;
   videoUrl: string;
+  embedHtml?: string; // Add this for ScoreBat iframe HTML widgets
   thumbnail: string;
   views: string;
   date: string;
@@ -78,13 +79,20 @@ export const Highlights: React.FC = () => {
               <X size={16} />
             </button>
             
-            {/* HTML5 Video */}
-            <video 
-              src={selectedVideo.videoUrl} 
-              controls 
-              autoPlay 
-              style={{ width: '100%', display: 'block', aspectRatio: '16/9', background: '#000' }}
-            />
+            {/* Render ScoreBat iframe widget, or fall back to standard HTML5 video tag */}
+            {selectedVideo.embedHtml ? (
+              <div 
+                dangerouslySetInnerHTML={{ __html: selectedVideo.embedHtml }}
+                style={{ width: '100%', aspectRatio: '16/9', background: '#000', overflow: 'hidden' }}
+              />
+            ) : (
+              <video 
+                src={selectedVideo.videoUrl} 
+                controls 
+                autoPlay 
+                style={{ width: '100%', display: 'block', aspectRatio: '16/9', background: '#000' }}
+              />
+            )}
             
             <div className="modal-body">
               <h2 className="modal-title">{selectedVideo.title}</h2>
