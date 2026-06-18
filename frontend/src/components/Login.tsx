@@ -42,7 +42,7 @@ export const Login: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email) {
+    if (!email || (isSignUp && !username) || !password) {
       setErr('Please fill in all fields');
       return;
     }
@@ -50,12 +50,12 @@ export const Login: React.FC = () => {
     setLoading(true);
     try {
       if (isSignUp) {
-        await signup(username, email);
+        await signup(username, email, password);
       } else {
-        await login(username, email);
+        await login(email, password);
       }
-    } catch (error) {
-      setErr('Authentication failed. Please try again.');
+    } catch (error: any) {
+      setErr(error.message || 'Authentication failed. Please try again.');
     } finally {
       setLoading(false);
     }

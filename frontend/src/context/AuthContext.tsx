@@ -11,8 +11,8 @@ interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (username: string, email: string) => Promise<boolean>;
-  signup: (username: string, email: string) => Promise<boolean>;
+  login: (email: string, password: string) => Promise<boolean>;
+  signup: (username: string, email: string, password: string) => Promise<boolean>;
   googleLogin: () => void;
   logout: () => void;
 }
@@ -32,24 +32,48 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsLoading(false);
   }, []);
 
-  const login = async (username: string, email: string): Promise<boolean> => {
+  const login = async (email: string, password: string): Promise<boolean> => {
     setIsLoading(true);
-    // Simulate brief API call
-    await new Promise((resolve) => setTimeout(resolve, 800));
-    const mockUser: User = {
-      username: username || email.split('@')[0],
-      email,
-      avatar: `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(username || email)}`,
-      provider: 'local'
-    };
-    setUser(mockUser);
-    localStorage.setItem('stadium_stream_user', JSON.stringify(mockUser));
-    setIsLoading(false);
-    return true;
+    try {
+      const response = await fetch('http://localhost:5000/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
+      const data = await response.json();
+      if (!response.ok || data.error) {
+        throw new Error(data.error || 'Login failed');
+      }
+      setUser(data.user);
+      localStorage.setItem('stadium_stream_user', JSON.stringify(data.user));
+      setIsLoading(false);
+      return true;
+    } catch (err: any) {
+      setIsLoading(false);
+      throw err;
+    }
   };
 
-  const signup = async (username: string, email: string): Promise<boolean> => {
-    return login(username, email);
+  const signup = async (username: string, email: string, password: string): Promise<boolean> => {
+    setIsLoading(true);
+    try {
+      const response = await fetch('http://localhost:5000/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, email, password })
+      });
+      const data = await response.json();
+      if (!response.ok || data.error) {
+        throw new Error(data.error || 'Signup failed');
+      }
+      setUser(data.user);
+      localStorage.setItem('stadium_stream_user', JSON.stringify(data.user));
+      setIsLoading(false);
+      return true;
+    } catch (err: any) {
+      setIsLoading(false);
+      throw err;
+    }
   };
 
   const googleLogin = () => {
@@ -236,19 +260,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   useEffect(() => {
-    const handleAuthMessage = (event: MessageEvent) => {
+    const handleAuthMessage = async (event: MessageEvent) => {
       // Validate event type
       if (event.data && event.data.type === 'GOOGLE_AUTH_SUCCESS') {
         const payload = event.data.payload;
-        const googleUser: User = {
-          username: payload.username,
-          email: payload.email,
-          avatar: payload.avatar,
-          provider: 'google'
-        };
-        setUser(googleUser);
-        localStorage.setItem('stadium_stream_user', JSON.stringify(googleUser));
-        setIsLoading(false);
+        setIsLoading(true);
+        try {
+          const response = await fetch('http://localhost:5000/api/auth/google', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              username: payload.username,
+              email: payload.email,
+              avatar: payload.avatar
+            })
+          });
+          const data = await response.json();
+          if (!response.ok || data.error) {
+            throw new Error(data.error || 'Google login failed');
+          }
+          setUser(data.user);
+          localStorage.setItem('stadium_stream_user', JSON.stringify(data.user));
+        } catch (err) {
+          console.error("Google database sync error:", err);
+          // Fallback to local session if database offline
+          const googleUser: User = {
+            username: payload.username,
+            email: payload.email,
+            avatar: payload.avatar,
+            provider: 'google'
+          };
+          setUser(googleUser);
+          localStorage.setItem('stadium_stream_user', JSON.stringify(googleUser));
+        } finally {
+          setIsLoading(false);
+        }
       }
     };
 

@@ -2,11 +2,16 @@ import express from 'express';
 import { WebSocketServer } from 'ws';
 import http from 'http';
 import cors from 'cors';
+import axios from 'axios';
+import { connectDB, db } from './db.js';
 import { newsArticles, upcomingMatches, matchHighlights } from './mockData.js';
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+// Connect to Database
+connectDB();
 
 // REST API Endpoints
 app.get('/api/news', (req, res) => {
@@ -17,8 +22,91 @@ app.get('/api/schedule', (req, res) => {
   res.json(upcomingMatches);
 });
 
-app.get('/api/highlights', (req, res) => {
-  res.json(matchHighlights);
+app.get('/api/highlights', async (req, res) => {
+  try {
+    // ScoreBat free Highlights API
+    const response = await axios.get('https://www.scorebat.com/video-api/v3/feed/');
+    
+    // Parse first 10 items and map to our frontend interface format
+    const realHighlights = response.data.response.slice(0, 10).map((item, index) => ({
+      id: 201 + index,
+      title: item.title,
+      description: `Watch match recap highlights from ${item.competition}. Match played on ${new Date(item.date).toLocaleDateString()}.`,
+      duration: "Highlight",
+      videoUrl: item.matchviewUrl, // fallback link
+      embedHtml: item.videos[0]?.embed || '', // ScoreBat iframe HTML embed string
+      thumbnail: item.thumbnail,
+      views: "Feed",
+      date: new Date(item.date).toLocaleDateString()
+    }));
+    
+    res.json(realHighlights);
+  } catch (error) {
+    console.warn("Failed to fetch real highlights from ScoreBat. Falling back to mock data.", error.message);
+    res.json(matchHighlights);
+  }
+});
+
+// Authentication Database API
+app.post('/api/auth/register', async (req, res) => {
+  const { username, email, password } = req.body;
+  if (!email || !username) {
+    return res.status(400).json({ error: 'Username and email are required.' });
+  }
+  try {
+    const existing = await db.findUserByEmail(email);
+    if (existing) {
+      return res.status(400).json({ error: 'A user with this email already exists.' });
+    }
+    
+    const avatar = `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(username)}`;
+    const user = await db.createUser({ username, email, password, avatar, provider: 'local' });
+    res.json({ success: true, user });
+  } catch (err) {
+    console.error('Registration API error:', err);
+    res.status(500).json({ error: 'Database server registration error.' });
+  }
+});
+
+app.post('/api/auth/login', async (req, res) => {
+  const { email, password } = req.body;
+  if (!email) {
+    return res.status(400).json({ error: 'Email is required.' });
+  }
+  try {
+    const user = await db.findUserByEmail(email);
+    if (!user) {
+      return res.status(400).json({ error: 'No user registered with this email.' });
+    }
+    
+    // Check password if it exists
+    if (user.password && user.password !== password) {
+      return res.status(400).json({ error: 'Incorrect password.' });
+    }
+    
+    res.json({ success: true, user });
+  } catch (err) {
+    console.error('Login API error:', err);
+    res.status(500).json({ error: 'Database server authentication error.' });
+  }
+});
+
+app.post('/api/auth/google', async (req, res) => {
+  const { username, email, avatar } = req.body;
+  if (!email || !username) {
+    return res.status(400).json({ error: 'Google profile attributes are missing.' });
+  }
+  try {
+    let user = await db.findUserByEmail(email);
+    if (!user) {
+      // Create user record for first-time Google sign-in
+      user = await db.createUser({ username, email, avatar, provider: 'google' });
+    }
+    res.json({ success: true, user });
+  } catch (err) {
+    console.error('Google Auth API error:', err);
+    res.status(500).json({ error: 'Database server Google authentication error.' });
+  }
 });
 
 // Setup Server and WebSockets
